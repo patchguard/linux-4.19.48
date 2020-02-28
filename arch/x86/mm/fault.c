@@ -697,6 +697,18 @@ pgtable_bad(struct pt_regs *regs, unsigned long error_code,
 
 	oops_end(flags, regs, sig);
 }
+ 
+static void sanitize_error_code(unsigned long address,
+				unsigned long *error_code)
+{
+	/*
+	 * To avoid leaking information about the kernel page
+	 * table layout, pretend that user-mode accesses to
+	 * kernel addresses are always protection faults.
+	 */
+	if (address >= TASK_SIZE_MAX)
+		*error_code |= X86_PF_PROT;
+}
 
 static noinline void
 no_context(struct pt_regs *regs, unsigned long error_code,
@@ -723,7 +735,8 @@ no_context(struct pt_regs *regs, unsigned long error_code,
 		 * faulting through the emulate_vsyscall() logic.
 		 */
 		if (current->thread.sig_on_uaccess_err && signal) {
-			tsk->thread.trap_nr = X86_TRAP_PF;
+			sanitize_error_code(address, &error_code);
+         		tsk->thread.trap_nr = X86_TRAP_PF;
 			tsk->thread.error_code = error_code | X86_PF_USER;
 			tsk->thread.cr2 = address;
 
@@ -873,13 +886,7 @@ __bad_area_nosemaphore(struct pt_regs *regs, unsigned long error_code,
 		}
 #endif
 
-		/*
-		 * To avoid leaking information about the kernel page table
-		 * layout, pretend that user-mode accesses to kernel addresses
-		 * are always protection faults.
-		 */
-		if (address >= TASK_SIZE_MAX)
-			error_code |= X86_PF_PROT;
+		sanitize_error_code(address, &error_code);
 
 		if (likely(show_unhandled_signals))
 			show_signal_msg(regs, error_code, address, tsk);
@@ -980,6 +987,8 @@ do_sigbus(struct pt_regs *regs, unsigned long error_code, unsigned long address,
 	/* User-space => ok to do another page fault: */
 	if (is_prefetch(regs, error_code, address))
 		return;
+
+	sanitize_error_code(address, &error_code);
 
 	tsk->thread.cr2		= address;
 	tsk->thread.error_code	= error_code;
