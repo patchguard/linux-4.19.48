@@ -612,7 +612,7 @@ void sgx_encl_put_backing(struct sgx_backing *backing, bool do_write)
 	put_page(backing->contents);
 }
 
-static int sgx_encl_test_and_clear_young_cb(pte_t *ptep, unsigned long addr,
+static int sgx_encl_test_and_clear_young_cb(pte_t *ptep, pgtable_t token, unsigned long addr,
 					    void *data)
 {
 	pte_t pte;
