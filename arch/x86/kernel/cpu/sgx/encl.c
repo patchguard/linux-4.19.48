@@ -249,10 +249,10 @@ static void sgx_vma_open(struct vm_area_struct *vma)
 		vma->vm_private_data = NULL;
 }
 
-static unsigned int sgx_vma_fault(struct vm_fault *vmf)
+static int sgx_vma_fault(struct vm_fault *vmf)
 {
-	unsigned long addr = (unsigned long)vmf->address;
 	struct vm_area_struct *vma = vmf->vma;
+	unsigned long addr = (unsigned long)vmf->address;
 	struct sgx_encl *encl = vma->vm_private_data;
 	struct sgx_encl_page *entry;
 	int ret = VM_FAULT_NOPAGE;
@@ -275,7 +275,9 @@ static unsigned int sgx_vma_fault(struct vm_fault *vmf)
 		goto out;
 
 	ret = vmf_insert_pfn(vma, addr, PFN_DOWN(entry->epc_page->desc));
-	if (ret != VM_FAULT_NOPAGE) {
+	if (!ret) {
+		ret = VM_FAULT_NOPAGE;
+	}else{
 		ret = VM_FAULT_SIGBUS;
 		goto out;
 	}
