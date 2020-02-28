@@ -9,6 +9,7 @@
 #include <linux/slab.h>
 #include <linux/sched/mm.h>
 #include <linux/sched/signal.h>
+#include "driver.h"
 #include "encls.h"
 
 struct task_struct *ksgxswapd_tsk;
