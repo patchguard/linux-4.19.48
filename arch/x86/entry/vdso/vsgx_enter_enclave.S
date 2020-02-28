@@ -76,7 +76,7 @@ int __vdso_sgx_enter_enclave(int leaf, void *tcs,
 			     struct sgx_enclave_exception *e,
 			     sgx_enclave_exit_handler_t handler);
 #endif
-SYM_FUNC_START(__vdso_sgx_enter_enclave)
+ENTRY(__vdso_sgx_enter_enclave)
 	/* Prolog */
 	.cfi_startproc
 	push	%rbp
@@ -184,4 +184,4 @@ SYM_FUNC_START(__vdso_sgx_enter_enclave)
 
 _ASM_VDSO_EXTABLE_HANDLE(.Lenclu_eenter_eresume, .Lhandle_exception)
 
-SYM_FUNC_END(__vdso_sgx_enter_enclave)
+ENDPROC(__vdso_sgx_enter_enclave)
