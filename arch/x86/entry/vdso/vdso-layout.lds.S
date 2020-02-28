@@ -85,7 +85,11 @@ SECTIONS
 	 * stuff that isn't used at runtime in between.
 	 */
 
-	.text		: { *(.text*) }			:text	=0x90909090,
+	.text		: {
+		*(.text*)
+		*(.fixup)
+	}						:text	=0x90909090,
+
 
 	/*
 	 * At the end so that eu-elflint stays happy when vdso2c strips
@@ -94,6 +98,8 @@ SECTIONS
 	 */
 	.altinstructions	: { *(.altinstructions) }	:text
 	.altinstr_replacement	: { *(.altinstr_replacement) }	:text
+
+	__ex_table		: { *(__ex_table) }		:text
 
 	/DISCARD/ : {
 		*(.discard)
