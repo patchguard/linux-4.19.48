@@ -63,6 +63,7 @@ struct sgx_encl_mm {
 	struct mm_struct *mm;
 	struct list_head list;
 	struct mmu_notifier mmu_notifier;
+	struct rcu_head rcu;
 };
 
 struct sgx_encl {

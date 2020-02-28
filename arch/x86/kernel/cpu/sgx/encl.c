@@ -131,6 +131,14 @@ static struct sgx_encl_page *sgx_encl_load_page(struct sgx_encl *encl,
 	return entry;
 }
 
+static void sgx_encl_mm_release_deferred(struct rcu_head *rcu)
+{
+	struct sgx_encl_mm *encl_mm =
+		container_of(rcu, struct sgx_encl_mm, rcu);
+
+	kfree(encl_mm);
+}
+
 static void sgx_mmu_notifier_release(struct mmu_notifier *mn,
 				     struct mm_struct *mm)
 {
@@ -153,7 +161,16 @@ static void sgx_mmu_notifier_release(struct mmu_notifier *mn,
 
 	if (tmp == encl_mm) {
 		synchronize_srcu(&encl_mm->encl->srcu);
-		mmu_notifier_put(mn);
+                
+                /*
+		 * Delay freeing encl_mm until after mmu_notifier synchronizes
+		 * its SRCU to ensure encl_mm cannot be dereferenced.
+		 */
+		mmu_notifier_unregister_no_release(mn, mm);
+		mmu_notifier_call_srcu(&encl_mm->rcu,
+				       &sgx_encl_mm_release_deferred);
+                kfree(encl_mm);
+
 	}
 }
 
