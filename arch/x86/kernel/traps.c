@@ -61,6 +61,7 @@
 #include <asm/mpx.h>
 #include <asm/vm86.h>
 #include <asm/umip.h>
+#include <asm/vdso.h>
 
 #ifdef CONFIG_X86_64
 #include <asm/x86_init.h>
@@ -212,6 +213,9 @@ do_trap_no_signal(struct task_struct *tsk, int trapnr, char *str,
 		tsk->thread.error_code = error_code;
 		tsk->thread.trap_nr = trapnr;
 		die(str, regs, error_code);
+	} else {
+		if (fixup_vdso_exception(regs, trapnr, error_code, 0))
+			return 0;
 	}
 
 	return -1;
@@ -556,6 +560,10 @@ do_general_protection(struct pt_regs *regs, long error_code)
 
 		tsk->thread.error_code = error_code;
 		tsk->thread.trap_nr = X86_TRAP_GP;
+
+                if (fixup_vdso_exception(regs, X86_TRAP_GP, error_code, 0))
+                        return;
+
 		if (notify_die(DIE_GPF, "general protection fault", regs, error_code,
 			       X86_TRAP_GP, SIGSEGV) != NOTIFY_STOP)
 			die("general protection fault", regs, error_code);
@@ -783,6 +791,10 @@ dotraplinkage void do_debug(struct pt_regs *regs, long error_code)
 							SIGTRAP) == NOTIFY_STOP)
 		goto exit;
 
+	if (user_mode(regs) &&
+	    fixup_vdso_exception(regs, X86_TRAP_DB, error_code, 0))
+		goto exit;
+
 	/*
 	 * Let others (NMI) know that the debug stack is in use
 	 * as we may switch to the interrupt stack.
@@ -866,6 +878,9 @@ static void math_error(struct pt_regs *regs, int error_code, int trapnr)
 
 	/* Retry when we get spurious exceptions: */
 	if (!info.si_code)
+		return;
+
+	if (fixup_vdso_exception(regs, trapnr, error_code, 0))
 		return;
 
 	force_sig_info(SIGFPE, &info, task);
