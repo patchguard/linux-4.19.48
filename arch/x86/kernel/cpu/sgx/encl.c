@@ -174,17 +174,8 @@ static void sgx_mmu_notifier_release(struct mmu_notifier *mn,
 	}
 }
 
-static void sgx_mmu_notifier_free(struct mmu_notifier *mn)
-{
-	struct sgx_encl_mm *encl_mm =
-		container_of(mn, struct sgx_encl_mm, mmu_notifier);
-
-	kfree(encl_mm);
-}
-
 static const struct mmu_notifier_ops sgx_mmu_notifier_ops = {
 	.release		= sgx_mmu_notifier_release,
-	.free_notifier		= sgx_mmu_notifier_free,
 };
 
 static struct sgx_encl_mm *sgx_encl_find_mm(struct sgx_encl *encl,
