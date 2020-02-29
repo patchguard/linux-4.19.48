@@ -169,7 +169,6 @@ static void sgx_mmu_notifier_release(struct mmu_notifier *mn,
 		mmu_notifier_unregister_no_release(mn, mm);
 		mmu_notifier_call_srcu(&encl_mm->rcu,
 				       &sgx_encl_mm_release_deferred);
-                kfree(encl_mm);
 
 	}
 }
