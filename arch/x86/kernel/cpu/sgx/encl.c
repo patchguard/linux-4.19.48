@@ -274,9 +274,7 @@ static int sgx_vma_fault(struct vm_fault *vmf)
 		goto out;
 
 	ret = vmf_insert_pfn(vma, addr, PFN_DOWN(entry->epc_page->desc));
-	if (!ret) {
-		ret = VM_FAULT_NOPAGE;
-	}else{
+	if (ret != VM_FAULT_NOPAGE) {
 		ret = VM_FAULT_SIGBUS;
 		goto out;
 	}
