@@ -180,3 +180,24 @@ An application may be loaded into a container enclave which is specially
 configured with a library OS and run-time which permits the application to run.
 The enclave run-time and library OS work together to execute the application
 when a thread enters the enclave.
+
+================
+Kernel internals
+================
+
+An enclave is created by opening ``/dev/sgx/enclave`` and calling a set of ioctl
+calls, which reserve a fixed range of memory addresses for the enclave and
+initialize its memory contents.
+
+An enclave can be made visible with ``mmap()`` calls. Permissions are capped by
+enclave page permissions given during the building phase because CPU disallows a
+PTE have higher permissions than the enclave page that it contains.
+
+Enclaves can be forked or sent through UDS sockets, which allows an enclave
+consumer and a builder to be separate processes with a different set of
+privileges.
+
+The backing memory is implemented with a private shemm file, which is not
+accounted. This makes it advicable to not allow all processes in a system
+to build enclaves.
+
