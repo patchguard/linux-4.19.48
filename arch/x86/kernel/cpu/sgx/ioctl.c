@@ -595,21 +595,12 @@ static void sgx_update_lepubkeyhash_msrs(u64 *lepubkeyhash, bool enforce)
 	}
 }
 
-/*
-in V28, Removed non-LC flow from sgx_einit(), but we want to keep it so far to make sure new kernel could be available on old system. maybe remove it later.
-in V28 , Removed struct sgx_einittoken since only the size of the corresponding
-microarchitectural structure is used in the series ATM. but we keep it so far, may remove it later.
-
-*/
 static int sgx_einit(struct sgx_sigstruct *sigstruct,
-		     struct sgx_einittoken *token,
+		     void *token,
 		     struct sgx_epc_page *secs, u64 *lepubkeyhash)
 {
 	int ret;
-/*removed in V28 start */
-	if (!boot_cpu_has(X86_FEATURE_SGX_LC))
-		return __einit(sigstruct, token, sgx_epc_addr(secs));
-/*removed in V28 end*/
+
 	preempt_disable();
 	sgx_update_lepubkeyhash_msrs(lepubkeyhash, false);
 	ret = __einit(sigstruct, token, sgx_epc_addr(secs));
@@ -622,7 +613,7 @@ static int sgx_einit(struct sgx_sigstruct *sigstruct,
 }
 
 static int sgx_encl_init(struct sgx_encl *encl, struct sgx_sigstruct *sigstruct,
-			 struct sgx_einittoken *token)
+			 void *token)
 {
 	u64 mrsigner[4];
 	int ret;
@@ -700,10 +691,10 @@ err_out:
  */
 static long sgx_ioc_enclave_init(struct sgx_encl *encl, void __user *arg)
 {
-	struct sgx_einittoken *einittoken;
 	struct sgx_sigstruct *sigstruct;
 	struct sgx_enclave_init einit;
 	struct page *initp_page;
+	void *token;
 	int ret;
 
 	if (!(atomic_read(&encl->flags) & SGX_ENCL_CREATED))
@@ -717,9 +708,8 @@ static long sgx_ioc_enclave_init(struct sgx_encl *encl, void __user *arg)
 		return -ENOMEM;
 
 	sigstruct = kmap(initp_page);
-	einittoken = (struct sgx_einittoken *)
-		((unsigned long)sigstruct + PAGE_SIZE / 2);
-	memset(einittoken, 0, sizeof(*einittoken));
+	token = (void *)((unsigned long)sigstruct + PAGE_SIZE / 2);
+	memset(token, 0, SGX_LAUNCH_TOKEN_SIZE);
 
 	if (copy_from_user(sigstruct, (void __user *)einit.sigstruct,
 			   sizeof(*sigstruct))) {
@@ -727,7 +717,7 @@ static long sgx_ioc_enclave_init(struct sgx_encl *encl, void __user *arg)
 		goto out;
 	}
 
-	ret = sgx_encl_init(encl, sigstruct, einittoken);
+	ret = sgx_encl_init(encl, sigstruct, token);
 
 out:
 	kunmap(initp_page);
