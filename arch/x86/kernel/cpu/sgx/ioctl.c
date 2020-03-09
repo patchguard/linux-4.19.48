@@ -595,15 +595,21 @@ static void sgx_update_lepubkeyhash_msrs(u64 *lepubkeyhash, bool enforce)
 	}
 }
 
+/*
+in V28, Removed non-LC flow from sgx_einit(), but we want to keep it so far to make sure new kernel could be available on old system. maybe remove it later.
+in V28 , Removed struct sgx_einittoken since only the size of the corresponding
+microarchitectural structure is used in the series ATM. but we keep it so far, may remove it later.
+
+*/
 static int sgx_einit(struct sgx_sigstruct *sigstruct,
 		     struct sgx_einittoken *token,
 		     struct sgx_epc_page *secs, u64 *lepubkeyhash)
 {
 	int ret;
-
+/*removed in V28 start */
 	if (!boot_cpu_has(X86_FEATURE_SGX_LC))
 		return __einit(sigstruct, token, sgx_epc_addr(secs));
-
+/*removed in V28 end*/
 	preempt_disable();
 	sgx_update_lepubkeyhash_msrs(lepubkeyhash, false);
 	ret = __einit(sigstruct, token, sgx_epc_addr(secs));
