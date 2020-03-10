@@ -3,6 +3,7 @@
 
 #include <asm/mman.h>
 #include <linux/mman.h>
+#include <asm/sgx.h>
 #include <linux/delay.h>
 #include <linux/file.h>
 #include <linux/hashtable.h>
