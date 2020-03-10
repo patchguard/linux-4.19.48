@@ -4444,11 +4444,16 @@ static int hardware_enable(void)
         /*
 	 * Enable SGX if and only if the kernel supports SGX and Launch Control
 	 * is supported, i.e. disable SGX if the LE hash MSRs can't be written.
+	 * Enable SGX if and only if the kernel supports SGX.  Require Launch
+	 * Control support if SGX virtualization is *not* supported, i.e.
+	 * disable SGX if the LE hash MSRs can't be written and SGX can't be
+	 * exposed to a KVM guest (which might support non-LC configurations).
 	 */
 	enable_sgx = cpu_has(c, X86_FEATURE_SGX) &&
 		     cpu_has(c, X86_FEATURE_SGX1) &&
-		     cpu_has(c, X86_FEATURE_SGX_LC) &&
-		     IS_ENABLED(CONFIG_INTEL_SGX);
+		     IS_ENABLED(CONFIG_INTEL_SGX) &&
+		     (cpu_has(c, X86_FEATURE_SGX_LC) ||
+		      IS_ENABLED(CONFIG_INTEL_SGX_VIRTUALIZATION));
 
 
 
@@ -4457,16 +4462,20 @@ static int hardware_enable(void)
 	if (tboot_enabled())
 		test_bits |= FEATURE_CONTROL_VMXON_ENABLED_INSIDE_SMX;
 
-	if (enable_sgx)
-		msr |= FEAT_CTL_SGX_ENABLED | FEAT_CTL_SGX_LC_ENABLED;
+	if (enable_sgx) {
+		msr |= FEAT_CTL_SGX_ENABLED;
+		if (cpu_has(c, X86_FEATURE_SGX_LC))
+			msr |= FEAT_CTL_SGX_LC_ENABLED;
+	}
 
 	if ((old & test_bits) != test_bits) {
 		/* enable and lock */
 		wrmsrl(MSR_IA32_FEATURE_CONTROL, old | test_bits);
 	}
 
-	if (!(msr & FEAT_CTL_SGX_ENABLED) ||
-	    !(msr & FEAT_CTL_SGX_LC_ENABLED) || !enable_sgx) {
+	if (!(msr & FEAT_CTL_SGX_ENABLED) || !enable_sgx ||
+	   (!(msr & FEAT_CTL_SGX_LC_ENABLED) &&
+	    !IS_ENABLED(CONFIG_INTEL_SGX_VIRTUALIZATION))) {
 		if (enable_sgx)
 			pr_err_once("SGX disabled by BIOS\n");
 
