@@ -3289,7 +3289,7 @@ static void skip_emulated_instruction(struct kvm_vcpu *vcpu)
 		rip = kvm_rip_read(vcpu);
 		rip += instr_len;
 		kvm_rip_write(vcpu, rip);
-                goto rip_updated:
+                goto rip_updated;
 	}
 
 	/*
@@ -3305,7 +3305,7 @@ static void skip_emulated_instruction(struct kvm_vcpu *vcpu)
 		rip = kvm_rip_read(vcpu);
 		rip += vmcs_read32(VM_EXIT_INSTRUCTION_LEN);
 		kvm_rip_write(vcpu, rip);
-                goto emulate:
+                goto rip_updated;
 	} else {
 		if (!kvm_emulate_instruction(vcpu, EMULTYPE_SKIP))
 			return 0;
@@ -4371,8 +4371,8 @@ static int vmx_set_msr(struct kvm_vcpu *vcpu, struct msr_data *msr_info)
         case MSR_IA32_SGXLEPUBKEYHASH0 ... MSR_IA32_SGXLEPUBKEYHASH3:
 		if (!msr_info->host_initiated &&
 		    (!guest_cpuid_has(vcpu, X86_FEATURE_SGX_LC) ||
-		    ((vmx->msr_ia32_feature_control & FEAT_CTL_LOCKED) &&
-		    !(vmx->msr_ia32_feature_control & FEAT_CTL_SGX_LC_ENABLED))))
+		    ((vmx->msr_ia32_feature_control & FEATURE_CONTROL_LOCKED) &&
+		    !(vmx->msr_ia32_feature_control & FEATURE_CONTROL_SGX_LE_WR))))
 			return 1;
 		vmx->msr_ia32_sgxlepubkeyhash
 			[msr_index - MSR_IA32_SGXLEPUBKEYHASH0] = data;
