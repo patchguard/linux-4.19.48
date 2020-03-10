@@ -58,6 +58,7 @@
 
 #include "trace.h"
 #include "pmu.h"
+#include "sgx.h"
 #include "vmx_evmcs.h"
 
 #define __ex(x) __kvm_handle_fault_on_reboot(x)
@@ -9475,16 +9476,18 @@ fail:
 	return 1;
 }
 
+#ifndef CONFIG_INTEL_SGX_VIRTUALIZATION
 static int handle_encls(struct kvm_vcpu *vcpu)
 {
 	/*
-	 * SGX virtualization is not yet supported.  There is no software
-	 * enable bit for SGX, so we have to trap ENCLS and inject a #UD
-	 * to prevent the guest from executing ENCLS.
+         * SGX virtualization is disabled.  There is no software enable bit for
+	 * SGX, so KVM intercepts all ENCLS leafs and injects a #UD to prevent
+	 * the guest from executing ENCLS (when SGX is supported by hardware).
 	 */
 	kvm_queue_exception(vcpu, UD_VECTOR);
 	return 1;
 }
+#endif /* CONFIG_INTEL_SGX_VIRTUALIZATION */
 
 /*
  * The exit handlers return 1 if the exit was handled fully and guest execution
