@@ -673,7 +673,7 @@ static inline int __do_cpuid_ent(struct kvm_cpuid_entry2 *entry, u32 function,
 		 * opt-in from userspace.  ATTRIBUTES.XFRM is not adjusted
 		 * as userspace is expected to derive it from supported XCR0.
 		 */
-		do_host_cpuid(&entry[1], 0x12, 0x1);
+		do_cpuid_1_ent(&entry[1], 0x12, 0x1);
 		entry[1].eax &= kvm_cpuid_12_1_eax_sgx_features;
 		entry[1].ebx &= kvm_cpuid_12_1_ebx_sgx_features;
 		break;
