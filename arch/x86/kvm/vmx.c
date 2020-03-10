@@ -12441,7 +12441,7 @@ static int prepare_vmcs02(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12,
 				vmcs12->guest_intr_status);
 
 		if (exec_control & SECONDARY_EXEC_ENCLS_EXITING)
-			vmx_write_encls_bitmap(&vmx->vcpu, vmcs12);
+			vmx_write_encls_bitmap(&vmx->vcpu, NULL);
 
 		/*
 		 * Write an illegal value to APIC_ACCESS_ADDR. Later,
