@@ -119,3 +119,5 @@ void setup_clear_cpu_cap(unsigned int feature)
 {
 	do_clear_cpu_cap(NULL, feature);
 }
+EXPORT_SYMBOL_GPL(setup_clear_cpu_cap);
+

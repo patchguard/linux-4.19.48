@@ -4843,6 +4843,7 @@ void kvm_get_segment(struct kvm_vcpu *vcpu,
 {
 	kvm_x86_ops->get_segment(vcpu, var, seg);
 }
+EXPORT_SYMBOL_GPL(kvm_get_segment);
 
 gpa_t translate_nested_gpa(struct kvm_vcpu *vcpu, gpa_t gpa, u32 access,
 			   struct x86_exception *exception)
