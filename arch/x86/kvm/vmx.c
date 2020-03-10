@@ -4532,10 +4532,10 @@ static int hardware_enable(void)
 	 * disable SGX if the LE hash MSRs can't be written and SGX can't be
 	 * exposed to a KVM guest (which might support non-LC configurations).
 	 */
-	enable_sgx = cpu_has(c, X86_FEATURE_SGX) &&
-		     cpu_has(c, X86_FEATURE_SGX1) &&
+	enable_sgx = (old & X86_FEATURE_SGX) &&
+		     (old & X86_FEATURE_SGX1) &&
 		     IS_ENABLED(CONFIG_INTEL_SGX) &&
-		     (cpu_has(c, X86_FEATURE_SGX_LC) ||
+		     ((old & X86_FEATURE_SGX_LC) ||
 		      IS_ENABLED(CONFIG_INTEL_SGX_VIRTUALIZATION));
 
 
@@ -4546,9 +4546,9 @@ static int hardware_enable(void)
 		test_bits |= FEATURE_CONTROL_VMXON_ENABLED_INSIDE_SMX;
 
 	if (enable_sgx) {
-		msr |= FEAT_CTL_SGX_ENABLED;
-		if (cpu_has(c, X86_FEATURE_SGX_LC))
-			msr |= FEAT_CTL_SGX_LC_ENABLED;
+		test_bits |= FEATURE_CONTROL_SGX_ENABLE;
+		if (old & X86_FEATURE_SGX_LC)
+			test_bits |= FEATURE_CONTROL_SGX_LE_WR;
 	}
 
 	if ((old & test_bits) != test_bits) {
@@ -4556,13 +4556,17 @@ static int hardware_enable(void)
 		wrmsrl(MSR_IA32_FEATURE_CONTROL, old | test_bits);
 	}
 
-	if (!(msr & FEAT_CTL_SGX_ENABLED) || !enable_sgx ||
-	   (!(msr & FEAT_CTL_SGX_LC_ENABLED) &&
+	if (!(test_bits & FEATURE_CONTROL_SGX_ENABLE) || !enable_sgx ||
+	   (!(test_bits & FEATURE_CONTROL_SGX_LE_WR) &&
 	    !IS_ENABLED(CONFIG_INTEL_SGX_VIRTUALIZATION))) {
 		if (enable_sgx)
 			pr_err_once("SGX disabled by BIOS\n");
 
-		clear_sgx_caps();
+         	setup_clear_cpu_cap(X86_FEATURE_SGX);
+	        setup_clear_cpu_cap(X86_FEATURE_SGX_LC);
+	        setup_clear_cpu_cap(X86_FEATURE_SGX1);
+	        setup_clear_cpu_cap(X86_FEATURE_SGX2);
+
 	}
 
 	kvm_cpu_vmxon(phys_addr);
