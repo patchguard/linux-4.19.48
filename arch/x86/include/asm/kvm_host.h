@@ -876,6 +876,9 @@ struct kvm_arch {
 	bool x2apic_broadcast_quirk_disabled;
 
 	bool guest_can_read_msr_platform_info;
+
+        /* Guest can access the SGX PROVISIONKEY. */
+	bool sgx_provisioning_allowed;
 };
 
 struct kvm_vm_stat {
