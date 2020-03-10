@@ -4,8 +4,7 @@
 
 #include <linux/kvm_host.h>
 
-#include "capabilities.h"
-#include "ops.h"
+#include <linux/capability.h>
 
 #ifdef CONFIG_INTEL_SGX_VIRTUALIZATION
 extern bool __read_mostly enable_sgx;
