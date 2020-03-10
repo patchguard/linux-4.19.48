@@ -1024,6 +1024,9 @@ struct vcpu_vmx {
 
 	bool req_immediate_exit;
 
+        /* Exit from SGX enclave */
+	bool sgx_enclave_exit;
+
 	/* Support for PML */
 #define PML_ENTITY_NUM		512
 	struct page *pml_pg;
@@ -3242,17 +3245,66 @@ static void vmx_set_interrupt_shadow(struct kvm_vcpu *vcpu, int mask)
 
 static bool vmx_is_emulatable(struct kvm_vcpu *vcpu, void *insn, int insn_len)
 {
+	if (unlikely(to_vmx(vcpu)->sgx_enclave_exit)) {
+		kvm_queue_exception(vcpu, UD_VECTOR);
+		return false;
+	}
 	return true;
 }
 
 static void skip_emulated_instruction(struct kvm_vcpu *vcpu)
 {
 	unsigned long rip;
+ 	u32 instr_len;
 
-	rip = kvm_rip_read(vcpu);
-	rip += vmcs_read32(VM_EXIT_INSTRUCTION_LEN);
-	kvm_rip_write(vcpu, rip);
+	instr_len = vmcs_read32(VM_EXIT_INSTRUCTION_LEN);
 
+	/*
+	 * Emulating an enclave's instructions isn't supported as KVM
+	 * cannot access the enclave's memory or its true RIP, e.g. the
+	 * vmcs.GUEST_RIP points at the exit point of the enclave, not
+	 * the RIP that actually triggered the VM-Exit.  But, because
+	 * most instructions that cause VM-Exit will #UD in an enclave,
+	 * most instruction-based VM-Exits simply do not occur.
+	 *
+	 * There are a few exceptions, notably the debug instructions
+	 * INT1ICEBRK and INT3, as they are allowed in debug enclaves
+	 * and generate #DB/#BP as expected, which KVM might intercept.
+	 * But again, the CPU does the dirty work and saves an instr
+	 * length of zero so VMMs don't shoot themselves in the foot.
+	 * WARN if KVM tries to skip a non-zero length instruction on
+	 * a VM-Exit from an enclave.
+	 */
+	if (likely(instr_len)) {
+		WARN(to_vmx(vcpu)->sgx_enclave_exit,
+		     "KVM: skipping instruction after SGX enclave VM-Exit");
+
+		rip = kvm_rip_read(vcpu);
+		rip += instr_len;
+		kvm_rip_write(vcpu, rip);
+                goto rip_updated:
+	}
+
+	/*
+	 * Using VMCS.VM_EXIT_INSTRUCTION_LEN on EPT misconfig depends on
+	 * undefined behavior: Intel's SDM doesn't mandate the VMCS field be
+	 * set when EPT misconfig occurs.  In practice, real hardware updates
+	 * VM_EXIT_INSTRUCTION_LEN on EPT misconfig, but other hypervisors
+	 * (namely Hyper-V) don't set it due to it being undefined behavior,
+	 * i.e. we end up advancing IP with some random value.
+	 */
+	if (!static_cpu_has(X86_FEATURE_HYPERVISOR) ||
+	    to_vmx(vcpu)->exit_reason != EXIT_REASON_EPT_MISCONFIG) {
+		rip = kvm_rip_read(vcpu);
+		rip += vmcs_read32(VM_EXIT_INSTRUCTION_LEN);
+		kvm_rip_write(vcpu, rip);
+                goto emulate:
+	} else {
+		if (!kvm_emulate_instruction(vcpu, EMULTYPE_SKIP))
+			return 0;
+	}
+
+rip_updated:
 	/* skipping an emulated instruction also counts */
 	vmx_set_interrupt_shadow(vcpu, 0);
 }
@@ -7732,6 +7784,11 @@ static int handle_ept_misconfig(struct kvm_vcpu *vcpu)
 {
 	gpa_t gpa;
 
+        if (!vmx_is_emulatable(vcpu, NULL, 0))
+         	return 1;
+
+
+
 	/*
 	 * A nested guest cannot optimize MMIO vmexits, because we have an
 	 * nGPA here instead of the required GPA.
@@ -11000,6 +11057,16 @@ static void __noclone vmx_vcpu_run(struct kvm_vcpu *vcpu)
 	vmx->idt_vectoring_info = 0;
 
 	vmx->exit_reason = vmx->fail ? 0xdead : vmcs_read32(VM_EXIT_REASON);
+
+        /*
+	 * Immediately cache and clear the "exit from SGX enclave" bit so that
+	 * KVM can directly compare exit_reason against the base exit reasons,
+	 * e.g. exit_reason == EXIT_REASON_EXCEPTION_NMI.
+	 */
+	vmx->sgx_enclave_exit =
+		(vmx->exit_reason & VMX_EXIT_REASON_FROM_ENCLAVE);
+	vmx->exit_reason &= ~VMX_EXIT_REASON_FROM_ENCLAVE;
+
 	if (vmx->fail || (vmx->exit_reason & VMX_EXIT_REASONS_FAILED_VMENTRY))
 		return;
 
@@ -13192,6 +13259,8 @@ static void prepare_vmcs12(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12,
 	/* update exit information fields: */
 
 	vmcs12->vm_exit_reason = exit_reason;
+	if (to_vmx(vcpu)->sgx_enclave_exit)
+		vmcs12->vm_exit_reason |= VMX_EXIT_REASON_FROM_ENCLAVE;
 	vmcs12->exit_qualification = exit_qualification;
 	vmcs12->vm_exit_intr_info = exit_intr_info;
 
