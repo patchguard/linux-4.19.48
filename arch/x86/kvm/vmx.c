@@ -55,6 +55,7 @@
 #include <asm/mmu_context.h>
 #include <asm/spec-ctrl.h>
 #include <asm/mshyperv.h>
+#include <asm/sgx_arch.h>
 
 #include "trace.h"
 #include "pmu.h"
@@ -1069,7 +1070,7 @@ static inline struct kvm_vmx *to_kvm_vmx(struct kvm *kvm)
 	return container_of(kvm, struct kvm_vmx, kvm);
 }
 
-static inline struct vcpu_vmx *to_vmx(struct kvm_vcpu *vcpu)
+struct vcpu_vmx *to_vmx(struct kvm_vcpu *vcpu)
 {
 	return container_of(vcpu, struct vcpu_vmx, vcpu);
 }
@@ -3308,7 +3309,7 @@ static void skip_emulated_instruction(struct kvm_vcpu *vcpu)
                 goto rip_updated;
 	} else {
 		if (!kvm_emulate_instruction(vcpu, EMULTYPE_SKIP))
-			return 0;
+			return ;
 	}
 
 rip_updated:
@@ -3531,6 +3532,131 @@ static u64 vmx_write_l1_tsc_offset(struct kvm_vcpu *vcpu, u64 offset)
 	vmcs_write64(TSC_OFFSET, active_offset);
 	return active_offset;
 }
+
+bool sgx_enabled_in_guest_bios(struct kvm_vcpu *vcpu)
+{
+        const u64 bits = FEATURE_CONTROL_SGX_ENABLE | FEATURE_CONTROL_LOCKED;
+        return (to_vmx(vcpu)->msr_ia32_feature_control & bits) == bits;
+}
+
+/*
+ * ECREATE must be intercepted to enforce MISCSELECT, ATTRIBUTES and XFRM
+ * restrictions if the guest's allowed-1 settings diverge from hardware.
+ */
+static bool vmx_intercept_encls_ecreate(struct kvm_vcpu *vcpu)
+{
+        struct kvm_cpuid_entry2 *guest_cpuid;
+        u32 eax, ebx, ecx, edx;
+
+        if (!vcpu->kvm->arch.sgx_provisioning_allowed)
+                return true;
+
+        guest_cpuid = kvm_find_cpuid_entry(vcpu, 0x12, 0);
+        if (!guest_cpuid)
+                return true;
+
+        cpuid_count(0x12, 0, &eax, &ebx, &ecx, &edx);
+        if (guest_cpuid->ebx != ebx)
+                return true;
+
+        guest_cpuid = kvm_find_cpuid_entry(vcpu, 0x12, 1);
+        if (!guest_cpuid)
+                return true;
+
+        cpuid_count(0x12, 1, &eax, &ebx, &ecx, &edx);
+        if (guest_cpuid->eax != eax || guest_cpuid->ebx != ebx ||
+            guest_cpuid->ecx != ecx || guest_cpuid->edx != edx)
+                return true;
+
+        return false;
+}
+
+static inline bool nested_cpu_has_encls_exit(struct vmcs12 *vmcs12)
+{
+	return nested_cpu_has2(vmcs12, SECONDARY_EXEC_ENCLS_EXITING);
+}
+
+void vmx_write_encls_bitmap(struct kvm_vcpu *vcpu, struct vmcs12 *vmcs12)
+{
+        /*
+         * There is no software enable bit for SGX that is virtualized by
+         * hardware, e.g. there's no CR4.SGXE, so when SGX is disabled in the
+         * guest (either by the host or by the guest's BIOS) but enabled in the
+         * host, trap all ENCLS leafs and inject #UD/#GP as needed to emulate
+         * the expected system behavior for ENCLS.
+         */
+        u64 bitmap = -1ull;
+
+        /* Nothing to do if hardware doesn't support SGX */
+        if (!cpu_has_vmx_encls_vmexit())
+                return;
+
+        if (guest_cpuid_has(vcpu, X86_FEATURE_SGX) &&
+            sgx_enabled_in_guest_bios(vcpu)) {
+                if (guest_cpuid_has(vcpu, X86_FEATURE_SGX1)) {
+                        bitmap &= ~GENMASK_ULL(ETRACK, ECREATE);
+                        if (vmx_intercept_encls_ecreate(vcpu))
+                                bitmap |= (1 << ECREATE);
+                }
+
+                if (guest_cpuid_has(vcpu, X86_FEATURE_SGX2))
+                        bitmap &= ~GENMASK_ULL(EMODT, EAUG);
+
+                /*
+                 * Trap and execute EINIT if launch control is enabled in the
+                 * host using the guest's values for launch control MSRs, even
+                 * if the guest's values are fixed to hardware default values.
+                 * The MSRs are not loaded/saved on VM-Enter/VM-Exit as writing
+                 * the MSRs is extraordinarily expensive.
+                 */
+                if (boot_cpu_has(X86_FEATURE_SGX_LC))
+                        bitmap |= (1 << EINIT);
+
+                if (!vmcs12 && is_guest_mode(vcpu))
+                        vmcs12 = get_vmcs12(vcpu);
+                if (vmcs12 && nested_cpu_has_encls_exit(vmcs12))
+                        bitmap |= vmcs12->encls_exiting_bitmap;
+        }
+        vmcs_write64(ENCLS_EXITING_BITMAP, bitmap);
+}
+
+bool encls_leaf_enabled_in_guest(struct kvm_vcpu *vcpu, u32 leaf)
+{
+        if (!enable_sgx || !guest_cpuid_has(vcpu, X86_FEATURE_SGX))
+                return false;
+
+        if (leaf >= ECREATE && leaf <= ETRACK)
+                return guest_cpuid_has(vcpu, X86_FEATURE_SGX1);
+
+        if (leaf >= EAUG && leaf <= EMODT)
+                return guest_cpuid_has(vcpu, X86_FEATURE_SGX2);
+
+        return false;
+}
+
+int handle_encls(struct kvm_vcpu *vcpu)
+{
+        u32 leaf = (u32)vcpu->arch.regs[VCPU_REGS_RAX];
+	struct vcpu_vmx *vmx = to_vmx(vcpu);
+
+        if (!encls_leaf_enabled_in_guest(vcpu, leaf)) {
+                kvm_queue_exception(vcpu, UD_VECTOR);
+        } else if (!sgx_enabled_in_guest_bios(vcpu)) {
+                kvm_inject_gp(vcpu, 0);
+        } else {
+                if (leaf == ECREATE)
+                        return handle_encls_ecreate(vcpu);
+                if (leaf == EINIT)
+                        return handle_encls_einit(vcpu,vmx->msr_ia32_sgxlepubkeyhash);
+                WARN(1, "KVM: unexpected exit on ENCLS[%u]", leaf);
+                vcpu->run->exit_reason = KVM_EXIT_UNKNOWN;
+                vcpu->run->hw.hardware_exit_reason = EXIT_REASON_ENCLS;
+                return 0;
+        }
+        return 1;
+}
+
+
 
 /*
  * nested_vmx_allowed() checks whether a guest should be allowed to use VMX
