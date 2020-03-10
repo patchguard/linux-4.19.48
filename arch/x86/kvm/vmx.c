@@ -3240,6 +3240,11 @@ static void vmx_set_interrupt_shadow(struct kvm_vcpu *vcpu, int mask)
 		vmcs_write32(GUEST_INTERRUPTIBILITY_INFO, interruptibility);
 }
 
+static bool vmx_is_emulatable(struct kvm_vcpu *vcpu, void *insn, int insn_len)
+{
+	return true;
+}
+
 static void skip_emulated_instruction(struct kvm_vcpu *vcpu)
 {
 	unsigned long rip;
@@ -14475,6 +14480,7 @@ static struct kvm_x86_ops vmx_x86_ops __ro_after_init = {
 	.pre_enter_smm = vmx_pre_enter_smm,
 	.pre_leave_smm = vmx_pre_leave_smm,
 	.enable_smi_window = enable_smi_window,
+ 	.is_emulatable = vmx_is_emulatable,
 };
 
 static void vmx_cleanup_l1d_flush(void)
