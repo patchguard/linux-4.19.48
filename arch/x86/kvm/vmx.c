@@ -4658,11 +4658,10 @@ static int hardware_enable(void)
 	 * disable SGX if the LE hash MSRs can't be written and SGX can't be
 	 * exposed to a KVM guest (which might support non-LC configurations).
 	 */
-	enable_sgx = (old & X86_FEATURE_SGX) &&
-		     (old & X86_FEATURE_SGX1) &&
-		     IS_ENABLED(CONFIG_INTEL_SGX) &&
-		     ((old & X86_FEATURE_SGX_LC) ||
-		      IS_ENABLED(CONFIG_INTEL_SGX_VIRTUALIZATION));
+	enable_sgx = (old & FEATURE_CONTROL_SGX_ENABLE ) &&
+		     (old & FEATURE_CONTROL_SGX_LE_WR) &&
+		     IS_ENABLED(CONFIG_INTEL_SGX) && 
+		      IS_ENABLED(CONFIG_INTEL_SGX_VIRTUALIZATION);
 
 
 
