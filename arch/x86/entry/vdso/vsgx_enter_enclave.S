@@ -3,6 +3,7 @@
 #include <linux/linkage.h>
 #include <asm/export.h>
 #include <asm/errno.h>
+#include <asm/enclu.h>
 
 #include "extable.h"
 
@@ -14,68 +15,6 @@
 .code64
 .section .text, "ax"
 
-/**
- * __vdso_sgx_enter_enclave() - Enter an SGX enclave
- * @leaf:	ENCLU leaf, must be EENTER or ERESUME
- * @tcs:	TCS, must be non-NULL
- * @e:		Optional struct sgx_enclave_exception instance
- * @handler:	Optional enclave exit handler
- *
- * **Important!**  __vdso_sgx_enter_enclave() is **NOT** compliant with the
- * x86-64 ABI, i.e. cannot be called from standard C code.
- *
- * Input ABI:
- *  @leaf	%eax
- *  @tcs	8(%rsp)
- *  @e 		0x10(%rsp)
- *  @handler	0x18(%rsp)
- *
- * Output ABI:
- *  @ret	%eax
- *
- * All general purpose registers except RAX, RBX and RCX are passed as-is to
- * the enclave. RAX, RBX and RCX are consumed by EENTER and ERESUME and are
- * loaded with @leaf, asynchronous exit pointer, and @tcs respectively.
- *
- * RBP and the stack are used to anchor __vdso_sgx_enter_enclave() to the
- * pre-enclave state, e.g. to retrieve @e and @handler after an enclave exit.
- * All other registers are available for use by the enclave and its runtime,
- * e.g. an enclave can push additional data onto the stack (and modify RSP) to
- * pass information to the optional exit handler (see below).
- *
- * Most exceptions reported on ENCLU, including those that occur within the
- * enclave, are fixed up and reported synchronously instead of being delivered
- * via a standard signal. Debug Exceptions (#DB) and Breakpoints (#BP) are
- * never fixed up and are always delivered via standard signals. On synchrously
- * reported exceptions, -EFAULT is returned and details about the exception are
- * recorded in @e, the optional sgx_enclave_exception struct.
-
- * If an exit handler is provided, the handler will be invoked on synchronous
- * exits from the enclave and for all synchronously reported exceptions. In
- * latter case, @e is filled prior to invoking the handler.
- *
- * The exit handler's return value is interpreted as follows:
- *  >0:		continue, restart __vdso_sgx_enter_enclave() with @ret as @leaf
- *   0:		success, return @ret to the caller
- *  <0:		error, return @ret to the caller
- *
- * The userspace exit handler is responsible for unwinding the stack, e.g. to
- * pop @e, u_rsp and @tcs, prior to returning to __vdso_sgx_enter_enclave().
- * The exit handler may also transfer control, e.g. via longjmp() or a C++
- * exception, without returning to __vdso_sgx_enter_enclave().
- *
- * Return:
- *  0 on success,
- *  -EINVAL if ENCLU leaf is not allowed,
- *  -EFAULT if an exception occurs on ENCLU or within the enclave
- *  -errno for all other negative values returned by the userspace exit handler
- */
-#ifdef SGX_KERNEL_DOC
-/* C-style function prototype to coerce kernel-doc into parsing the comment. */
-int __vdso_sgx_enter_enclave(int leaf, void *tcs,
-			     struct sgx_enclave_exception *e,
-			     sgx_enclave_exit_handler_t handler);
-#endif
 ENTRY(__vdso_sgx_enter_enclave)
 	/* Prolog */
 	.cfi_startproc
@@ -84,12 +23,15 @@ ENTRY(__vdso_sgx_enter_enclave)
 	.cfi_rel_offset		%rbp, 0
 	mov	%rsp, %rbp
 	.cfi_def_cfa_register	%rbp
+	push	%rbx
+	.cfi_rel_offset		%rbx, -8
 
+	mov	%ecx, %eax
 .Lenter_enclave:
 	/* EENTER <= leaf <= ERESUME */
-	cmp	$0x2, %eax
+	cmp	$EENTER, %eax
 	jb	.Linvalid_leaf
-	cmp	$0x3, %eax
+	cmp	$ERESUME, %eax
 	ja	.Linvalid_leaf
 
 	/* Load TCS and AEP */
@@ -110,6 +52,7 @@ ENTRY(__vdso_sgx_enter_enclave)
 	jne	.Linvoke_userspace_handler
 
 .Lout:
+	pop	%rbx
 	leave
 	.cfi_def_cfa		%rsp, 8
 	ret
@@ -139,8 +82,9 @@ ENTRY(__vdso_sgx_enter_enclave)
 	/* Pass the untrusted RSP (at exit) to the callback via %rcx. */
 	mov	%rsp, %rcx
 
-	/* Save the untrusted RSP in %rbx (non-volatile register). */
+	/* Save the untrusted RSP offset in %rbx (non-volatile register). */
 	mov	%rsp, %rbx
+	and	$0xf, %rbx
 
 	/*
 	 * Align stack per x86_64 ABI. Note, %rsp needs to be 16-byte aligned
@@ -161,8 +105,8 @@ ENTRY(__vdso_sgx_enter_enclave)
 	mov	0x20(%rbp), %rax
 	call	.Lretpoline
 
-	/* Restore %rsp to its post-exit value. */
-	mov	%rbx, %rsp
+	/* Undo the post-exit %rsp adjustment. */
+	lea	0x20(%rsp, %rbx), %rsp
 
 	/*
 	 * If the return from callback is zero or negative, return immediately,
