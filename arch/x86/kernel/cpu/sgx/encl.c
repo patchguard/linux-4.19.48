@@ -203,6 +203,9 @@ int sgx_encl_mm_add(struct sgx_encl *encl, struct mm_struct *mm)
 	struct sgx_encl_mm *encl_mm;
 	int ret;
 
+	/* mm_list can be accessed only by a single thread at a time. */
+	lockdep_assert_held_write(&mm->mmap_sem);
+
 	if (atomic_read(&encl->flags) & SGX_ENCL_DEAD)
 		return -EINVAL;
 
@@ -231,8 +234,6 @@ int sgx_encl_mm_add(struct sgx_encl *encl, struct mm_struct *mm)
 	spin_lock(&encl->mm_lock);
 	list_add_rcu(&encl_mm->list, &encl->mm_list);
 	spin_unlock(&encl->mm_lock);
-
-	synchronize_srcu(&encl->srcu);
 
 	return 0;
 }
@@ -295,8 +296,7 @@ out:
  *
  * Iterate through the enclave pages contained within [@start, @end) to verify
  * the permissions requested by @vm_prot_bits do not exceed that of any enclave
- * page to be mapped.  Page addresses that do not have an associated enclave
- * page are interpreted to zero permissions.
+ * page to be mapped. 
  *
  * Return:
  *   0 on success,
@@ -314,10 +314,6 @@ int sgx_encl_may_map(struct sgx_encl *encl, unsigned long start,
 	 */
 	if (!!(current->personality & READ_IMPLIES_EXEC))
 		return -EACCES;
-
-	/* PROT_NONE always succeeds. */
-	if (!vm_prot_bits)
-		return 0;
 
 	idx_start = PFN_DOWN(start);
 	idx_end = PFN_DOWN(end - 1);

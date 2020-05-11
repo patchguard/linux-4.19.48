@@ -479,14 +479,9 @@ err_out_free:
  *
  * 1. A regular page: PROT_R, PROT_W and PROT_X match the SECINFO permissions.
  * 2. A TCS page: PROT_R | PROT_W.
- * 3. No page: PROT_NONE.
  *
  * mmap() is not allowed to surpass the minimum of the maximum protection bits
  * within the given address range.
- *
- * As stated above, a non-existent page is interpreted as a page with no
- * permissions. In effect, this allows mmap() with PROT_NONE to be used to seek
- * an address range for the enclave that can be then populated into SECS.
  *
  * If ENCLS opcode fails, that effectively means that EPC has been invalidated.
  * When this happens the enclave is destroyed and -EIO is returned to the
