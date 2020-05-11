@@ -36,7 +36,7 @@
 #define ENCLS_WARN(r, name) {						  \
 	do {								  \
 		int _r = (r);						  \
-		WARN(_r, "%s returned %d (0x%x)\n", (name), _r, _r); \
+		WARN_ONCE(_r, "%s returned %d (0x%x)\n", (name), _r, _r); \
 	} while (0);							  \
 }
 
