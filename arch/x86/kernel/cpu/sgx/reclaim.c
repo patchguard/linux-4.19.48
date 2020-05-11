@@ -185,28 +185,36 @@ static void sgx_reclaimer_block(struct sgx_epc_page *epc_page)
 	struct sgx_encl_page *page = epc_page->owner;
 	unsigned long addr = SGX_ENCL_PAGE_ADDR(page);
 	struct sgx_encl *encl = page->encl;
-	struct sgx_encl_mm *encl_mm;
+	unsigned long mm_list_version;
+        struct sgx_encl_mm *encl_mm;
 	struct vm_area_struct *vma;
 	int idx, ret;
 
-	idx = srcu_read_lock(&encl->srcu);
+	do {
+		mm_list_version = encl->mm_list_version;
 
-	list_for_each_entry_rcu(encl_mm, &encl->mm_list, list) {
-		if (!mmget_not_zero(encl_mm->mm))
-			continue;
+		/* Pairs with smp_rmb() in sgx_encl_mm_add(). */
+		smp_rmb();
 
-		down_read(&encl_mm->mm->mmap_sem);
+		idx = srcu_read_lock(&encl->srcu);
 
-		ret = sgx_encl_find(encl_mm->mm, addr, &vma);
-		if (!ret && encl == vma->vm_private_data)
-			zap_vma_ptes(vma, addr, PAGE_SIZE);
+		list_for_each_entry_rcu(encl_mm, &encl->mm_list, list) {
+			if (!mmget_not_zero(encl_mm->mm))
+				continue;
 
-		up_read(&encl_mm->mm->mmap_sem);
+			down_read(&encl_mm->mm->mmap_sem);
 
-		mmput_async(encl_mm->mm);
-	}
+			ret = sgx_encl_find(encl_mm->mm, addr, &vma);
+			if (!ret && encl == vma->vm_private_data)
+				zap_vma_ptes(vma, addr, PAGE_SIZE);
 
-	srcu_read_unlock(&encl->srcu, idx);
+			up_read(&encl_mm->mm->mmap_sem);
+
+			mmput_async(encl_mm->mm);
+		}
+
+		srcu_read_unlock(&encl->srcu, idx);
+	} while (unlikely(encl->mm_list_version != mm_list_version));
 
 	mutex_lock(&encl->lock);
 
@@ -250,6 +258,12 @@ static const cpumask_t *sgx_encl_ewb_cpumask(struct sgx_encl *encl)
 	cpumask_t *cpumask = &encl->cpumask;
 	struct sgx_encl_mm *encl_mm;
 	int idx;
+
+	/*
+	 * Can race with sgx_encl_mm_add(), but ETRACK has already been
+	 * executed, which means that the CPUs running in the new mm will enter
+	 * into the enclave with a fresh epoch.
+	 */
 
 	cpumask_clear(cpumask);
 
@@ -334,7 +348,7 @@ static void sgx_reclaimer_write(struct sgx_epc_page *epc_page,
 
 	if (atomic_read(&encl->flags) & SGX_ENCL_DEAD) {
 		ret = __eremove(sgx_epc_addr(epc_page));
-		WARN(ret, "EREMOVE returned %d\n", ret);
+			ENCLS_WARN(ret, "EREMOVE returned %d\n");
 	} else {
 		sgx_encl_ewb(epc_page, backing);
 	}

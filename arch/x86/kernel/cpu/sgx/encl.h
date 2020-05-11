@@ -75,7 +75,8 @@ struct sgx_encl {
 	struct mutex lock;
 	struct list_head mm_list;
 	spinlock_t mm_lock;
-	struct file *backing;
+	unsigned long mm_list_version;
+        struct file *backing;
 	struct kref refcount;
 	struct srcu_struct srcu;
 	unsigned long base;

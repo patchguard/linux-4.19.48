@@ -233,7 +233,10 @@ int sgx_encl_mm_add(struct sgx_encl *encl, struct mm_struct *mm)
 
 	spin_lock(&encl->mm_lock);
 	list_add_rcu(&encl_mm->list, &encl->mm_list);
-	spin_unlock(&encl->mm_lock);
+	/* Pairs with smp_rmb() in sgx_reclaimer_block(). */
+	smp_wmb();
+	encl->mm_list_version++;
+        spin_unlock(&encl->mm_lock);
 
 	return 0;
 }
