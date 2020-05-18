@@ -1,0 +1,17 @@
+*.[Oo]
+*.cmd
+*.ko
+*.mod.c
+*.order
+*.a
+*.builtin
+*.d
+*.pem
+*.x509
+*.bin
+*.so
+*.dbg
+*.asn1.c
+*.asn1.h
+*vmlinux*
+~          
