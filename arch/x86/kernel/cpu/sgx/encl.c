@@ -318,6 +318,10 @@ int sgx_encl_may_map(struct sgx_encl *encl, unsigned long start,
 	if (!!(current->personality & READ_IMPLIES_EXEC))
 		return -EACCES;
 
+	/* PROT_NONE always succeeds. */
+	if (!vm_prot_bits)
+		return 0;
+
 	idx_start = PFN_DOWN(start);
 	idx_end = PFN_DOWN(end - 1);
 
