@@ -11,3 +11,6 @@
 *.bin
 *.so
 *.dbg
+*.asn1.c
+*.asn1.h
+*vmlinux*
