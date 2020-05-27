@@ -42,6 +42,13 @@ enum sgx_encl_page_desc {
 #define SGX_ENCL_PAGE_INDEX(page) \
 	PFN_DOWN((page)->desc - (page)->encl->base)
 
+enum sgx_encl_page_flags {
+	SGX_ENCL_PAGE_TCS	= BIT(0),
+	SGX_ENCL_PAGE_RESERVED	= BIT(1),
+	SGX_ENCL_PAGE_TRIM	= BIT(2),
+	SGX_ENCL_PAGE_ADDED	= BIT(3),
+};
+
 struct sgx_encl_page {
 	unsigned long desc;
 	unsigned long vm_max_prot_bits;
@@ -123,7 +130,10 @@ struct sgx_encl_page *sgx_encl_reserve_page(struct sgx_encl *encl,
 struct sgx_epc_page *sgx_alloc_va_page(void);
 unsigned int sgx_alloc_va_slot(struct sgx_va_page *va_page);
 void sgx_free_va_slot(struct sgx_va_page *va_page, unsigned int offset);
+inline bool sgx_va_slots_empty(struct sgx_va_page *page);
 bool sgx_va_page_full(struct sgx_va_page *va_page);
+struct sgx_encl_page *sgx_encl_augment(struct vm_area_struct *vma,
+				       unsigned long addr, bool write);
 
 #endif /* _X86_ENCL_H */
 

@@ -13,6 +13,7 @@
 
 struct sgx_epc_section sgx_epc_sections[SGX_MAX_EPC_SECTIONS];
 int sgx_nr_epc_sections;
+bool sgx_has_sgx2 = 0;
 
 static struct sgx_epc_page *__sgx_try_alloc_page(struct sgx_epc_section *section)
 {
@@ -256,6 +257,9 @@ static void __init sgx_init(void)
 
 	if (!boot_cpu_has(X86_FEATURE_SGX))
 		return;
+
+        if (boot_cpu_has(X86_FEATURE_SGX2))
+                sgx_has_sgx2 = 1;
 
 	if (!sgx_page_cache_init())
 		return;

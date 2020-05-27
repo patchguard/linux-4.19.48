@@ -679,6 +679,11 @@ static void __maybe_unused detect_sgx(struct cpuinfo_x86 *c)
 		goto err_msrs_rdonly;
 	}
 
+        if (!cpu_has(c, X86_FEATURE_SGX2)) {
+                pr_err_once("sgx: SGX2 instruction set is not supported\n");
+                goto err_sgx2_unsupported;
+        }
+
 	return;
 
 err_unsupported:
@@ -688,6 +693,9 @@ err_unsupported:
 
 err_msrs_rdonly:
 	setup_clear_cpu_cap(X86_FEATURE_SGX_LC);
+
+err_sgx2_unsupported:
+        setup_clear_cpu_cap(X86_FEATURE_SGX2);
 }
 
 static void init_intel(struct cpuinfo_x86 *c)

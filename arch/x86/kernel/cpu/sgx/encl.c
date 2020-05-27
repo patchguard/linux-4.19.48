@@ -85,12 +85,15 @@ static struct sgx_epc_page *sgx_encl_eldu(struct sgx_encl_page *encl_page,
 	return epc_page;
 }
 
-static struct sgx_encl_page *sgx_encl_load_page(struct sgx_encl *encl,
-						unsigned long addr)
+static struct sgx_encl_page *sgx_encl_load_page(struct vm_area_struct *vma,
+		                                struct sgx_encl *encl,
+						unsigned long addr,
+                 			        struct vm_fault *vmf)
 {
 	struct sgx_epc_page *epc_page;
 	struct sgx_encl_page *entry;
 	unsigned int flags;
+	bool write = (vmf) ? (FAULT_FLAG_WRITE & vmf->flags) : false;
 
 	/* If process was forked, VMA is still there but vm_private_data is set
 	 * to NULL.
@@ -104,7 +107,14 @@ static struct sgx_encl_page *sgx_encl_load_page(struct sgx_encl *encl,
 		return ERR_PTR(-EFAULT);
 
 	entry = radix_tree_lookup(&encl->page_tree, addr >> PAGE_SHIFT);
-	if (!entry)
+	if (vma && vmf && !entry) {
+		entry = sgx_encl_augment(vma, addr, write);
+	}
+
+	/* No entry found can not happen in 'reloading an evicted page'
+	 * flow.
+	 */
+        if (!entry)
 		return ERR_PTR(-EFAULT);
 
 	/* Page is already resident in the EPC. */
@@ -243,7 +253,13 @@ static void sgx_vma_open(struct vm_area_struct *vma)
 
 	if (!encl)
 		return;
-
+#if 0
+	/* protect from fork */
+	if (encl->mm != current->mm) {
+		vma->vm_private_data = NULL;
+		return;
+	}
+#endif
 	if (sgx_encl_mm_add(encl, vma->vm_mm))
 		vma->vm_private_data = NULL;
 }
@@ -257,12 +273,13 @@ static int sgx_vma_fault(struct vm_fault *vmf)
 	int ret = VM_FAULT_NOPAGE;
 	unsigned long pfn;
 
+
 	if (!encl)
 		return VM_FAULT_SIGBUS;
 
 	mutex_lock(&encl->lock);
 
-	entry = sgx_encl_load_page(encl, addr);
+	entry = sgx_encl_load_page(vma,encl, addr,vmf);
 	if (IS_ERR(entry)) {
 		if (unlikely(PTR_ERR(entry) != -EBUSY))
 			ret = VM_FAULT_SIGBUS;
@@ -677,7 +694,7 @@ struct sgx_encl_page *sgx_encl_reserve_page(struct sgx_encl *encl,
 	for ( ; ; ) {
 		mutex_lock(&encl->lock);
 
-		entry = sgx_encl_load_page(encl, addr);
+		entry = sgx_encl_load_page(NULL,encl, addr,NULL);
 		if (PTR_ERR(entry) != -EBUSY)
 			break;
 
@@ -746,6 +763,16 @@ unsigned int sgx_alloc_va_slot(struct sgx_va_page *va_page)
 void sgx_free_va_slot(struct sgx_va_page *va_page, unsigned int offset)
 {
 	clear_bit(offset >> 3, va_page->slots);
+}
+
+inline bool sgx_va_slots_empty(struct sgx_va_page *page)
+{
+	int slot = find_first_bit(page->slots, SGX_VA_SLOT_COUNT);
+
+	if (slot == SGX_VA_SLOT_COUNT)
+		return true;
+
+	return false;
 }
 
 /**

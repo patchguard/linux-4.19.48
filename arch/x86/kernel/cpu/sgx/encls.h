@@ -24,6 +24,9 @@ enum sgx_encls_leaf {
 	EPA	= 0x0A,
 	EWB	= 0x0B,
 	ETRACK	= 0x0C,
+	EAUG	= 0xD,
+	EMODPR	= 0xE,
+	EMODT	= 0xF,
 };
 
 /**
@@ -234,6 +237,23 @@ static inline int __ewb(struct sgx_pageinfo *pginfo, void *addr,
 			void *va)
 {
 	return __encls_ret_3(EWB, pginfo, addr, va);
+}
+
+static inline int __eaug(struct sgx_pageinfo *pginfo, void *epc)
+{
+	return __encls_2(EAUG,pginfo,epc);
+}
+
+static inline int __emodpr(struct sgx_secinfo *secinfo, void *epc)
+{
+
+	return __encls_ret_2(EMODPR,secinfo,epc);
+}
+
+static inline int __emodt(struct sgx_secinfo *secinfo, void *epc)
+{
+
+	return __encls_ret_2(EMODT,secinfo,epc);
 }
 
 #endif /* _X86_ENCLS_H */

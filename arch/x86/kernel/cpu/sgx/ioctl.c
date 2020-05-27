@@ -14,7 +14,9 @@
 #include <linux/suspend.h>
 #include "driver.h"
 #include "encl.h"
+#include "encl2.h"
 #include "encls.h"
+
 
 /* A per-cpu cache for the last known values of IA32_SGXLEPUBKEYHASHx MSRs. */
 static DEFINE_PER_CPU(u64 [4], sgx_lepubkeyhash_cache);
@@ -770,6 +772,133 @@ out:
 	return ret;
 }
 
+static long sgx_ioc_page_modpr(struct sgx_encl *encl,
+                               void __user *arg)
+{
+	struct sgx_modification_param params;
+
+        if (!sgx_has_sgx2)
+                return -ENOSYS;
+
+        if (copy_from_user(&params, arg, sizeof(params)))
+                return -EFAULT;
+
+	/*
+	 * Only RWX flags in mask are allowed
+	 * Restricting WR w/o RD is not allowed
+	 */
+	if (params.flags & ~(SGX_SECINFO_R | SGX_SECINFO_W | SGX_SECINFO_X))
+		return -EINVAL;
+	if (!(params.flags & SGX_SECINFO_R) &&
+	    (params.flags & SGX_SECINFO_W))
+		return -EINVAL;
+	return modify_range(encl,&params.range, params.flags);
+}
+
+/**
+ * sgx_ioc_page_to_tcs() - Pages defined in range are switched to TCS.
+ * These pages should be of type REG.
+ * eaccept needs to be invoked after return.
+ * @arg range address of pages to be switched
+ */
+static long sgx_ioc_page_to_tcs(struct sgx_encl *encl,
+                               void __user *arg)
+{
+        struct sgx_range range;
+
+        if (!sgx_has_sgx2)
+                return -ENOSYS;
+
+        if (copy_from_user(&range, arg, sizeof(range)))
+                return -EFAULT;
+
+	return modify_range(encl,&range, SGX_SECINFO_TCS);
+}
+
+/**
+ * sgx_ioc_trim_page() - Pages defined in range are being trimmed.
+ * These pages still belong to the enclave and can not be removed until
+ * eaccept has been invoked
+ * @arg range address of pages to be trimmed
+ */
+static long sgx_ioc_trim_page(struct sgx_encl *encl,
+                               void __user *arg)
+{
+        struct sgx_range range;
+
+        if (!sgx_has_sgx2)
+                return -ENOSYS;
+
+        if (copy_from_user(&range, arg, sizeof(range)))
+                return -EFAULT;
+
+	return modify_range(encl,(struct sgx_range *)arg, SGX_SECINFO_TRIM);
+}
+
+/**
+ * sgx_ioc_page_notify_accept() - Pages defined in range will be moved to
+ * the trimmed list, i.e. they can be freely removed from now. These pages
+ * should have PT_TRIM page type and should have been eaccepted priorly
+ * @arg range address of pages
+ */
+static long sgx_ioc_page_notify_accept(struct sgx_encl *encl,
+                               void __user *arg)
+{
+	unsigned long address, end;
+	int ret, tmp_ret = 0;
+
+        struct sgx_range range;
+
+	if (!sgx_has_sgx2)
+		return -ENOSYS;
+
+        if (copy_from_user(&range, arg, sizeof(range)))
+                return -EFAULT;
+
+	address = range.start_addr;
+	address &= ~(PAGE_SIZE-1);
+	end = address + range.nr_pages * PAGE_SIZE;
+
+
+	for (; address < end; address += PAGE_SIZE) {
+		tmp_ret = remove_page(encl, address, true);
+		if (tmp_ret) {
+			ret = tmp_ret;
+			continue;
+		}
+	}
+
+
+	return ret;
+}
+
+/**
+ * sgx_ioc_page_remove() - Pages defined by address will be removed
+ * @arg address of page
+ */
+static long sgx_ioc_page_remove(struct sgx_encl *encl,
+                               void __user *arg)
+{
+	unsigned long address ;
+	int ret;
+
+	if (!sgx_has_sgx2)
+		return -ENOSYS;
+
+        if (copy_from_user(&address, arg, sizeof(address)))
+                return -EFAULT;
+
+
+
+	ret = remove_page(encl, address, false);
+	if (ret) {
+		pr_warn("sgx: Failed to remove page, address=0x%lx ret=%d\n",
+			address, ret);
+	}
+
+	return ret;
+}
+
 long sgx_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 {
 	struct sgx_encl *encl = filep->private_data;
@@ -795,6 +924,23 @@ long sgx_ioctl(struct file *filep, unsigned int cmd, unsigned long arg)
 	case SGX_IOC_ENCLAVE_SET_ATTRIBUTE:
 		ret = sgx_ioc_enclave_set_attribute(encl, (void __user *)arg);
 		break;
+
+        case SGX_IOC_ENCLAVE_EMODPR:
+                ret = sgx_ioc_page_modpr(encl, (void __user *)arg);
+                break;
+        case SGX_IOC_ENCLAVE_MKTCS:
+                ret = sgx_ioc_page_to_tcs(encl, (void __user *)arg);
+                break;
+        case SGX_IOC_ENCLAVE_TRIM:
+                ret = sgx_ioc_trim_page(encl, (void __user *)arg);
+                break;
+        case SGX_IOC_ENCLAVE_NOTIFY_ACCEPT:
+                ret = sgx_ioc_page_notify_accept(encl, (void __user *)arg);
+                break;
+        case SGX_IOC_ENCLAVE_PAGE_REMOVE:
+                ret = sgx_ioc_page_remove(encl, (void __user *)arg);
+                break;
+
 	default:
 		ret = -ENOIOCTLCMD;
 		break;

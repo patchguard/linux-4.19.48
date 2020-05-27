@@ -15,6 +15,7 @@
 #define SGX_EINIT_SPIN_COUNT	20
 #define SGX_EINIT_SLEEP_COUNT	50
 #define SGX_EINIT_SLEEP_TIME	20
+#define SGX_EDMM_SPIN_COUNT	20
 
 extern u64 sgx_encl_size_max_32;
 extern u64 sgx_encl_size_max_64;

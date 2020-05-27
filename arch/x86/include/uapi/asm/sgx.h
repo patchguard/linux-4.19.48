@@ -28,6 +28,43 @@ enum sgx_page_flags {
 #define SGX_IOC_ENCLAVE_SET_ATTRIBUTE \
 	_IOW(SGX_MAGIC, 0x03, struct sgx_enclave_set_attribute)
 
+#define SGX_IOC_ENCLAVE_EMODPR \
+	_IOW(SGX_MAGIC, 0x09, struct sgx_modification_param)
+#define SGX_IOC_ENCLAVE_MKTCS \
+	_IOW(SGX_MAGIC, 0x0a, struct sgx_range)
+#define SGX_IOC_ENCLAVE_TRIM \
+	_IOW(SGX_MAGIC, 0x0b, struct sgx_range)
+#define SGX_IOC_ENCLAVE_NOTIFY_ACCEPT \
+	_IOW(SGX_MAGIC, 0x0c, struct sgx_range)
+#define SGX_IOC_ENCLAVE_PAGE_REMOVE \
+	_IOW(SGX_MAGIC, 0x0d, unsigned long)
+
+/* SGX leaf instruction return values */
+#define SGX_SUCCESS			0
+#define SGX_INVALID_SIG_STRUCT		1
+#define SGX_INVALID_ATTRIBUTE		2
+#define SGX_BLKSTATE			3
+#define SGX_INVALID_MEASUREMENT		4
+#define SGX_NOTBLOCKABLE		5
+#define SGX_PG_INVLD			6
+#define SGX_LOCKFAIL			7
+#define SGX_INVALID_SIGNATURE		8
+#define SGX_MAC_COMPARE_FAIL		9
+#define SGX_PAGE_NOT_BLOCKED		10
+//#define SGX_NOT_TRACKED			11
+#define SGX_VA_SLOT_OCCUPIED		12
+#define SGX_CHILD_PRESENT		13
+#define SGX_ENCLAVE_ACT			14
+#define SGX_ENTRYEPOCH_LOCKED		15
+//#define SGX_INVALID_EINITTOKEN		16
+#define SGX_PREV_TRK_INCMPL		17
+#define SGX_PG_IS_SECS			18
+#define SGX_PAGE_NOT_MODIFIABLE		20
+#define SGX_INVALID_CPUSVN		32
+#define SGX_INVALID_ISVSVN		64
+//#define SGX_UNMASKED_EVENT		128
+//#define SGX_INVALID_KEYNAME		256
+
 /**
  * struct sgx_enclave_create - parameter structure for the
  *                             %SGX_IOC_ENCLAVE_CREATE ioctl
@@ -63,6 +100,20 @@ struct sgx_enclave_add_pages {
  */
 struct sgx_enclave_init {
 	__u64 sigstruct;
+};
+
+/*
+ *     SGX2.0 definitions
+ */
+
+struct sgx_range {
+	unsigned long start_addr;
+	unsigned int nr_pages;
+};
+
+struct sgx_modification_param {
+	struct sgx_range range;
+	unsigned long flags;
 };
 
 /**

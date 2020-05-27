@@ -79,6 +79,7 @@ extern struct task_struct *ksgxswapd_tsk;
 extern struct wait_queue_head(ksgxswapd_waitq);
 extern struct list_head sgx_active_page_list;
 extern spinlock_t sgx_active_page_list_lock;
+extern bool sgx_has_sgx2;
 
 static inline unsigned long sgx_nr_free_pages(void)
 {
